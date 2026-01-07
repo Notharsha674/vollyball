@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Mobile Volleyball AI</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <style>
+        body {
+            margin: 0;
+            background-color: #333;
+            overflow: hidden;
+            font-family: 'Arial', sans-serif;
+            touch-action: none;
+        }
+        canvas {
+            display: block;
+            margin: 0 auto;
+            background-color: #3296FF;
+        }
+        #ui {
+            position: absolute;
+            top: 20px;
+            width: 100%;
+            text-align: center;
+            color: white;
+            font-size: 24px;
+            font-weight: bold;
+            pointer-events: none;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+        }
+        #controls {
+            position: absolute;
+            bottom: 30px;
+            width: 100%;
+            display: flex;
+            justify-content: space-between;
+            padding: 0 30px;
+            box-sizing: border-box;
+        }
+        .btn {
+            width: 70px;
+            height: 70px;
+            background-color: rgba(255, 255, 255, 0.3);
+            border: 2px solid white;
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 30px;
+            color: white;
+            user-select: none;
+        }
+        .btn:active { background-color: rgba(255, 255, 255, 0.6); }
+    </style>
+</head>
+<body>
+
+<div id="ui">Player: <span id="pScore">0</span> | AI: <span id="aScore">0</span></div>
+<canvas id="gameCanvas"></canvas>
+
+<div id="controls">
+    <div style="display:flex; gap:15px;">
+        <div class="btn" id="btnLeft">←</div>
+        <div class="btn" id="btnRight">→</div>
+    </div>
+    <div class="btn" id="btnJump">↑</div>
+</div>
+
+<script>
+    const canvas = document.getElementById("gameCanvas");
+    const ctx = canvas.getContext("2d");
+    const pScoreLabel = document.getElementById("pScore");
+    const aScoreLabel = document.getElementById("aScore");
+
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+
+    // Physics constants
+    const gravity = 0.6;
+    const friction = 0.8;
+    const groundY = canvas.height - 70;
+
+    let playerScore = 0;
+    let aiScore = 0;
+
+    const net = { x: canvas.width / 2 - 5, y: canvas.height - 180, w: 10, h: 110 };
+
+    const player = {
+        x: 100, y: groundY - 50, w: 50, h: 50,
+        color: "#FFAC33", velX: 0, velY: 0, speed: 6, jump: -14, grounded: false
+    };
+
+    const ai = {
+        x: canvas.width - 150, y: groundY - 50, w: 50, h: 50,
+        color: "#FF4B4B", velX: 0, velY: 0, speed: 4.5, jump: -14, grounded: false
+    };
+
+    const ball = {
+        x: canvas.width / 4, y: 100, radius: 18,
+        color: "white", velX: 4, velY: 0
+    };
+
+    let keys = { left: false, right: false, jump: false };
+
+    function setupTouch(id, key) {
+        const el = document.getElementById(id);
+        el.addEventListener("touchstart", (e) => { e.preventDefault(); keys[key] = true; });
+        el.addEventListener("touchend", (e) => { e.preventDefault(); keys[key] = false; });
+    }
+    setupTouch("btnLeft", "left");
+    setupTouch("btnRight", "right");
+    setupTouch("btnJump", "jump");
+
+    function resetBall(winner) {
+        if(winner === 'player') playerScore++;
+        else aiScore++;
+        
+        pScoreLabel.innerText = playerScore;
+        aScoreLabel.innerText = aiScore;
+
+        ball.x = winner === 'player' ? canvas.width * 0.75 : canvas.width * 0.25;
+        ball.y = 100;
+        ball.velX = 0;
+        ball.velY = 0;
+    }
+
+    function checkCollision(circle, rect) {
+        let testX = circle.x;
+        let testY = circle.y;
+        if (circle.x < rect.x) testX = rect.x;
+        else if (circle.x > rect.x + rect.w) testX = rect.x + rect.w;
+        if (circle.y < rect.y) testY = rect.y;
+        else if (circle.y > rect.y + rect.h) testY = rect.y + rect.h;
+        let dist = Math.sqrt((circle.x - testX)**2 + (circle.y - testY)**2);
+        return dist <= circle.radius;
+    }
+
+    function update() {
+        // Player Input
+        if (keys.left) player.velX = -player.speed;
+        if (keys.right) player.velX = player.speed;
+        if (keys.jump && player.grounded) { player.velY = player.jump; player.grounded = false; }
+
+        // AI Logic
+        let ballTarget = ball.x + (ball.velX * 10); // Predict slightly
+        if (ball.x > net.x) {
+            if (ai.x + ai.w / 2 < ballTarget - 10) ai.x += ai.speed;
+            else if (ai.x + ai.w / 2 > ballTarget + 10) ai.x -= ai.speed;
+            if (ball.y < ai.y && ball.x > canvas.width * 0.7 && ai.grounded) {
+                ai.velY = ai.jump;
+                ai.grounded = false;
+            }
+        }
+
+        // Apply Gravity & Movement
+        [player, ai].forEach(p => {
+            p.velX *= friction;
+            p.velY += gravity;
+            p.x += p.velX; p.y += p.velY;
+            if (p.y >= groundY - p.h) { p.y = groundY - p.h; p.velY = 0; p.grounded = true; }
+        });
+
+        // Player/Net Constraints
+        if (player.x < 0) player.x = 0;
+        if (player.x > net.x - player.w) player.x = net.x - player.w;
+        if (ai.x < net.x + net.w) ai.x = net.x + net.w;
+        if (ai.x > canvas.width - ai.w) ai.x = canvas.width - ai.w;
+
+        // Ball Physics
+        ball.velY += gravity * 0.6;
+        ball.x += ball.velX;
+        ball.y += ball.velY;
+
+        // Ball Collisions
+        if (ball.x < ball.radius || ball.x > canvas.width - ball.radius) ball.velX *= -1;
+        if (ball.y < ball.radius) ball.velX *= -1;
+        
+        // Scoring
+        if (ball.y > groundY - ball.radius) {
+            if (ball.x < net.x) resetBall('ai');
+            else resetBall('player');
+        }
+
+        // Ball vs Player/AI
+        [player, ai].forEach(p => {
+            if (checkCollision(ball, {x: p.x, y: p.y, w: p.w, h: p.h})) {
+                ball.velY = -12;
+                ball.velX = (ball.x - (p.x + p.w / 2)) * 0.4;
+            }
+        });
+
+        // Ball vs Net
+        if (checkCollision(ball, net)) {
+            ball.velX *= -1;
+        }
+
+        // Draw
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        
+        // Net
+        ctx.fillStyle = "white";
+        ctx.fillRect(net.x, net.y, net.w, net.h);
+        
+        // Ground
+        ctx.fillStyle = "#A0522D";
+        ctx.fillRect(0, groundY, canvas.width, 70);
+
+        // Entities
+        ctx.fillStyle = player.color; ctx.fillRect(player.x, player.y, player.w, player.h);
+        ctx.fillStyle = ai.color; ctx.fillRect(ai.x, ai.y, ai.w, ai.h);
+        ctx.beginPath(); ctx.arc(ball.x, ball.y, ball.radius, 0, Math.PI*2);
+        ctx.fillStyle = ball.color; ctx.fill(); ctx.closePath();
+
+        requestAnimationFrame(update);
+    }
+    update();
+</script>
+</body>
+</html>
